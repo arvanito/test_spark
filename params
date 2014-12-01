@@ -1,0 +1,24 @@
+// Configuration file for DataPreprocess method. 
+// Here, all the necessary main method arguments can be set.
+// Available variables:
+// 	- input_file: input dataset	
+//	- output_file: output results
+//	- eps1: contrast normalization parameter
+//	- eps2: ZCA whitening regularizer
+//
+//
+
+
+// input dataset file
+input_file="/Users/nikolaos/Desktop/patches.txt";
+
+// output results file
+output_file="/Users/nikolaos/Desktop/results.txt"
+
+// epsilon for contrast normalization
+eps1=10;
+
+// epsilon for ZCA whitening 
+eps2=0.1;
+
+//
