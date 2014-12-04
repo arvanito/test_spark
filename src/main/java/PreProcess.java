@@ -1,3 +1,10 @@
+import java.io.File;
+import java.io.IOException;
+import java.util.*;
+
+import org.apache.commons.io.FileUtils;
+
+import org.apache.spark.api.java.*;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.mllib.linalg.Matrices;
@@ -6,14 +13,14 @@ import org.apache.spark.mllib.linalg.Vector;
 import org.apache.spark.mllib.linalg.Vectors;
 import org.apache.spark.mllib.linalg.SingularValueDecomposition;
 import org.apache.spark.mllib.linalg.distributed.RowMatrix;
+import org.apache.spark.mllib.stat.MultivariateStatisticalSummary;
 
 /* Class that contains methods for matrix pre-processing
 
 Available methods:
 	- performZCA: Performs ZCA Whitening in distributed RowMatrix
-
+	- preprocessData: main function that performs data pre-processing with contrast normalization and ZCA whitening
 */
-
 public class PreProcess {
 
 	// main method for ZCA whitening, input is a centralized ditributed matrix, zero mean
@@ -36,13 +43,13 @@ public class PreProcess {
 		}
 
 		// create the ZCA matrix
-		MatMult matMult = new MatMult();
+		MatrixOps matrixOps = new MatrixOps();
 
 		// first left multiplication with the transpose
-		Matrix leftMult = matMult.DiagMatMatMult(Vectors.dense(l), new MatrixOps().transpose(V));
+		Matrix leftMult = matrixOps.DiagMatMatMult(Vectors.dense(l), matrixOps.transpose(V));
 		
 		// second left multiplication
-		Matrix ZCA = matMult.MatMatMult(V, leftMult);
+		Matrix ZCA = matrixOps.MatMatMult(V, leftMult);
 
 		// return the ZCA matrix
 		return ZCA;
@@ -50,54 +57,52 @@ public class PreProcess {
 
 	// main method for patch pre-processing, performs contrast normalization and zca whitening on the input data
 	// HERE, check the return type!!!!	
-	public void DataPreprocess(String[] args) {
+	public JavaRDD<Vector> preprocessData(JavaRDD<Vector> parsedData, String outputFile, Double eps1, Double eps2) {
 	
-		// create a Spark Configuration and Context
-    	SparkConf conf = new SparkConf().setAppName("Deep Learning");
-    	JavaSparkContext sc = new JavaSparkContext(conf);
-		
-    	// Load and parse data
-		String path = "/Users/nikolaos/Desktop/patches.txt";		// make this a function argument!!!
-    	JavaRDD<String> data = sc.textFile(path);
-    	JavaRDD<Vector> parsedData = data.map(new ParseData());
-		// maybe cache it here!!
-		//parsedData.cache();
-
 		// number of data points in the dataset
 		long n = parsedData.count();
 		
 		//RDD<Vector> scalaData = parsedData.rdd();
 
 		// contrast normalization, use lambda expression
-		Double eps1 = 10.0;		// make this a function argument!!!
 		JavaRDD<Vector> contrastNorm = parsedData.map(x -> new ContrastNormalization().call(x, eps1));
-		
+
 		// convert the JavaRRD<Vector> to a distributed RowMatrix (through Scala RDD<Vector>)
 		RowMatrix patches = new RowMatrix(contrastNorm.rdd());
 
-		// check if this mean vector is the same as the one below
+		// compute mean data vector
 		MultivariateStatisticalSummary summary = patches.computeColumnSummaryStatistics();
 		Vector m = summary.mean();
-
+		
 		// compute the mean vector of the whole dataset
 		/*Vector m = contrastNorm.reduce(new VectorSum());
-		for (int i = 0; i < m.size(); i++)
+		for (int i = 0; i < m.size(); i++) {
 			m.toArray()[i] = m.apply(i) / n;
-		*/
+		}
+		String ms = new MatrixOps().toString(m);
+		try {
+			File msDir = new File("/Users/nikolaos/Desktop/mean.txt");
+			FileUtils.writeStringToFile(msDir, ms);
+			System.out.println(m);
+		} catch (IOException ex) {
+			System.out.println(ex.toString());
+		}*/
 
 		// remove the mean from the dataset, use lambda expression
-		JavaRDD<Vector> centralContrastNorm = contrastNorm.map(x -> new SubtractMean().call(x, m));		
+		JavaRDD<Vector> centralContrastNorm = contrastNorm.map(x -> new SubtractMean().call(x, m));	
+
+		// create distributed matrix from centralized data, input to ZCA
 		patches = new RowMatrix(centralContrastNorm.rdd());
 		
 		// perform ZCA whitening and project the data onto the decorrelated space
-		double eps2 = 0.1;		// make this a function argument!!!
-		Matrix ZCA = new PreProcess().performZCA(patches, eps2);
+		System.out.println("Here we start the ZCA...");
+		Matrix ZCA = performZCA(patches, eps2);
 		patches = patches.multiply(ZCA);
+		System.out.println("Here we finish ZCA...");
 
 		// create a file with the processed patches and save it 
-		String patchesDirString = "/Users/nikolaos/Desktop/processedPatches";
 		try {
-			File patchesDir = new File(patchesDirString);
+			File patchesDir = new File(outputFile);
 
 			// if the directory exists, delete it
 			if (patchesDir.isDirectory()) {
@@ -110,36 +115,10 @@ public class PreProcess {
 			
 		// convert the distributed RowMatrix into a JavaRDD<Vector> 
 		JavaRDD<Vector> processedPatches = new JavaRDD(patches.rows(),centralContrastNorm.classTag());
-		processedPatches.saveAsTextFile(patchesDirString);
-
-		// convert to String and save it to a .txt file, catch IOException
-		//String matString = new MatrixOps().toString(ZCA);
-		/*try {
-			File file = new File("/Users/nikolaos/Desktop/zca.txt");		// make this a function argument!!!
-			FileUtils.writeStringToFile(file, matString);
-		} catch (IOException ex) {
-			System.out.println(ex.toString());
-		}*/
-
-		// collect the data
-		/*List<Vector> list = contrastNorm.collect();
-		centralContrastNorm.coalesce(1).saveAsTextFile("/Users/nikolaos/Desktop/centralContrastNorm");
-		*/
-
-		/*
-		// Cluster the data into two classes using KMeans, convert to Scale RDD
-    	int numClusters = 6400;
-    	int numIterations = 500;
-    	KMeansModel clusters = KMeans.train(processedPatches.rdd(), numClusters, numIterations);
-		*/
-
-		/*
-    	// Evaluate clustering by computing Within Set Sum of Squared Errors
-    	double WSSSE = clusters.computeCost(parsedData.rdd());
-    	System.out.println("Within Set Sum of Squared Errors = " + WSSSE);
-		*/
+		processedPatches.saveAsTextFile(outputFile);
+		
+		return processedPatches;
   }
-
 
 }
 
@@ -155,6 +134,7 @@ class ContrastNormalization implements Function2<Vector, Double, Vector> {
 	// v: std row vector of the dataset
 	// e: regularizer
 	public Vector call(Vector r, Double e) {	
+
 		// vector size
 		int s = r.size();
 
@@ -185,6 +165,29 @@ class ContrastNormalization implements Function2<Vector, Double, Vector> {
 } 
 
 
+// class to compute sum of two spark Vectors
+// Used in a reduce call for calculating sum vectors, mean vectors, e.t.c.
+class VectorSum implements Function2<Vector, Vector, Vector> {
+
+	// method to compute the sum of two Vectors of the same size
+  	public Vector call(Vector v1, Vector v2) { 
+		// maybe here check the size of the vector and throw an exception!!
+		
+		// vector size
+		int s = v1.size();
+
+		// loop over elements to add the two vectors
+		double[] v = new double[s];
+		for (int i = 0; i < s; i++) {
+			v[i] = v1.apply(i) + v2.apply(i);
+		}
+
+		return Vectors.dense(v);
+	}
+
+}
+
+
 // class to remove the mean vector from the dataset
 // Used in a map call to subtract the mean vector from each data point
 class SubtractMean implements Function2<Vector, Vector, Vector> {
@@ -202,7 +205,6 @@ class SubtractMean implements Function2<Vector, Vector, Vector> {
 			sub[i] = v.apply(i) - m.apply(i);
 		}
 		
-		// create dense vector from a double array
 		return Vectors.dense(sub);
 	}
 
@@ -225,7 +227,6 @@ class ParseData implements Function<String, Vector> {
 			values[i] = Double.parseDouble(sarray[i]);	// creates a double from a string
 		}
 		
-		// mllib class Vectors, create a dense vector from a double array
 		return Vectors.dense(values);
 	}
 
