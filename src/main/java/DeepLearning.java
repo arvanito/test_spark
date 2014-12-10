@@ -76,15 +76,16 @@ public class DeepLearning {
 		// parameters, make them more user-friendly in the running environment 
 		// no fixed number of arguments in every call
 		// e.g., -input String -output String -eps1 Double -eps2 Double ......
-		String inputFile = args[0];						// input dataset
-		String outputFilePatches = args[1];				// output file for pre-processed patches
-		Double eps1 = Double.valueOf(args[2]);			// contrast normalization parameter
-		Double eps2 = Double.valueOf(args[3]);			// ZCA regularization parameter
-		int numClusters = Integer.parseInt(args[4]);	// number of clusters for K-means
-		int numIterations = Integer.parseInt(args[5]);	// number of iterations for K-means
-		String outputFileCenters = args[6];				// output file for cluster centers
+		String inputFile = args[0];								// input dataset
+		String outputFilePatches = args[1];						// output file for pre-processed patches
+		final Double eps1 = Double.valueOf(args[2]);			// contrast normalization parameter
+		final Double eps2 = Double.valueOf(args[3]);			// ZCA regularization parameter
+		int numClusters = Integer.parseInt(args[4]);			// number of clusters for K-means
+		int numIterations = Integer.parseInt(args[5]);			// number of iterations for K-means
+		String outputFileCenters = args[6];						// output file for cluster centers
     
-		//System.out.println(inputFile);
+		// check matrix code here
+		//double[] x = {1,2,3,2,3,1}
 
 		// Load and parse data
 		System.out.println("Data parsing...");

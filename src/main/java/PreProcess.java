@@ -1,5 +1,6 @@
 import java.io.File;
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.*;
 
 import org.apache.commons.io.FileUtils;
@@ -21,10 +22,10 @@ Available methods:
 	- performZCA: Performs ZCA Whitening in distributed RowMatrix
 	- preprocessData: main function that performs data pre-processing with contrast normalization and ZCA whitening
 */
-public class PreProcess {
+public class PreProcess implements Serializable {
 
 	// main method for ZCA whitening, input is a centralized ditributed matrix, zero mean
-	public Matrix performZCA(RowMatrix mat, double e) {	
+	public Matrix performZCA(RowMatrix mat, final double e) {	
 		
 		// compute SVD of the data matrix
 		// the right singular vectors are the eigenvectors of the covariance, do the integer casting here!!!
@@ -51,28 +52,46 @@ public class PreProcess {
 		// second left multiplication
 		Matrix ZCA = matrixOps.MatMatMult(V, leftMult);
 
-		// return the ZCA matrix
 		return ZCA;
 	}
 
+	/*
+	class MyFunction<A,B> extends Function<A,B> {
+		protected Object foo
+		@override
+
+		Vector call(Ve) {
+			foo.run()
+		}
+	}*/
+
 	// main method for patch pre-processing, performs contrast normalization and zca whitening on the input data
 	// HERE, check the return type!!!!	
-	public JavaRDD<Vector> preprocessData(JavaRDD<Vector> parsedData, String outputFile, Double eps1, Double eps2) {
-	
+	public JavaRDD<Vector> preprocessData(JavaRDD<Vector> parsedData, String outputFile, final Double eps1, final Double eps2) {
+
 		// number of data points in the dataset
 		long n = parsedData.count();
 		
 		//RDD<Vector> scalaData = parsedData.rdd();
 
 		// contrast normalization, use lambda expression
-		JavaRDD<Vector> contrastNorm = parsedData.map(x -> new ContrastNormalization().call(x, eps1));
+		//JavaRDD<Vector> contrastNorm = parsedData.map(x -> new ContrastNormalization().call(x, eps1));
+
+		// workaround for Java 7 compatibility!
+		JavaRDD<Vector> contrastNorm = parsedData.map(
+			new Function<Vector, Vector>() {
+  				public Vector call(Vector x) { 
+  					return new ContrastNormalization().call(x, eps1);
+ 				}
+			}
+		);
 
 		// convert the JavaRRD<Vector> to a distributed RowMatrix (through Scala RDD<Vector>)
 		RowMatrix patches = new RowMatrix(contrastNorm.rdd());
 
 		// compute mean data vector
 		MultivariateStatisticalSummary summary = patches.computeColumnSummaryStatistics();
-		Vector m = summary.mean();
+		final Vector m = summary.mean();
 		
 		// compute the mean vector of the whole dataset
 		/*Vector m = contrastNorm.reduce(new VectorSum());
@@ -89,16 +108,23 @@ public class PreProcess {
 		}*/
 
 		// remove the mean from the dataset, use lambda expression
-		JavaRDD<Vector> centralContrastNorm = contrastNorm.map(x -> new SubtractMean().call(x, m));	
+		//JavaRDD<Vector> centralContrastNorm = contrastNorm.map(x -> new SubtractMean().call(x, m));	
+
+		// workaround for Java 7 compatibility!
+		JavaRDD<Vector> centralContrastNorm = contrastNorm.map(
+			new Function<Vector, Vector>() {
+				public Vector call(Vector x) {
+					return new SubtractMean().call(x, m);
+				}
+			}	
+		);	
 
 		// create distributed matrix from centralized data, input to ZCA
 		patches = new RowMatrix(centralContrastNorm.rdd());
 		
 		// perform ZCA whitening and project the data onto the decorrelated space
-		System.out.println("Here we start the ZCA...");
 		Matrix ZCA = performZCA(patches, eps2);
 		patches = patches.multiply(ZCA);
-		System.out.println("Here we finish ZCA...");
 
 		// create a file with the processed patches and save it 
 		try {
@@ -116,7 +142,7 @@ public class PreProcess {
 		// convert the distributed RowMatrix into a JavaRDD<Vector> 
 		JavaRDD<Vector> processedPatches = new JavaRDD(patches.rows(),centralContrastNorm.classTag());
 		processedPatches.saveAsTextFile(outputFile);
-		
+
 		return processedPatches;
   }
 
@@ -126,7 +152,7 @@ public class PreProcess {
 // class to compute contrast normalization 
 // Necessary pre-processing step for K-means to work well
 // Anonymous function to be called inside a map function
-class ContrastNormalization implements Function2<Vector, Double, Vector> {
+class ContrastNormalization {//implements Function2<Vector, Double, Vector> {
 	
 	// method to compute contrast normalization, each row is one observation
 	// r: original row vector -- data point
@@ -167,7 +193,7 @@ class ContrastNormalization implements Function2<Vector, Double, Vector> {
 
 // class to compute sum of two spark Vectors
 // Used in a reduce call for calculating sum vectors, mean vectors, e.t.c.
-class VectorSum implements Function2<Vector, Vector, Vector> {
+class VectorSum {//implements Function2<Vector, Vector, Vector> {
 
 	// method to compute the sum of two Vectors of the same size
   	public Vector call(Vector v1, Vector v2) { 
@@ -190,7 +216,7 @@ class VectorSum implements Function2<Vector, Vector, Vector> {
 
 // class to remove the mean vector from the dataset
 // Used in a map call to subtract the mean vector from each data point
-class SubtractMean implements Function2<Vector, Vector, Vector> {
+class SubtractMean {//implements Function2<Vector, Vector, Vector> {
 
 	// method to subtract the mean vector from each data point
 	public Vector call(Vector v, Vector m) {
