@@ -83,9 +83,24 @@ public class DeepLearning {
 		int numClusters = Integer.parseInt(args[4]);			// number of clusters for K-means
 		int numIterations = Integer.parseInt(args[5]);			// number of iterations for K-means
 		String outputFileCenters = args[6];						// output file for cluster centers
-    
-		// check matrix code here
-		//double[] x = {1,2,3,2,3,1}
+
+		// check convolution code
+		double[] x = {1, 2, 3, 2, 2, 3, 2, 3, 3, 1, 4, 2, 1, 2, 3, 4};
+		Matrix mx = Matrices.dense(4, 4, x);
+		double[] f = {1, 2, 3, 4};
+		Matrix mf = Matrices.dense(2, 2, f);
+		Vector vf = Vectors.dense(f);
+		int[] blockSize = {2,2};
+		Vector[] Vf = {vf,vf};
+		//Matrix out = new MatrixOps().localMatSubtractMean(mx, vf);
+		//Matrix out = new MatrixOps().localMatContrastNormalization(mx, 0.01); 
+		Matrix out = new MatrixOps().pool(mx, blockSize);	
+		//Matrix out = new MatrixOps().convertVectors2Mat(Vf, 2);
+		//System.out.println(mx);
+		//System.out.println(Vf.length);
+		System.out.println(out);
+		System.exit(0);
+		
 
 		// Load and parse data
 		System.out.println("Data parsing...");
@@ -94,23 +109,27 @@ public class DeepLearning {
 		
 		// assign the parsed Data to the pre-processed data
 		JavaRDD<Vector> processedData = parsedData;
-		//processedData = processedData.persist(new StorageLevel().MEMORY_ONLY());
+
+		// configuration class that contains necessary arguments for methods
+     	//Config config = new Config();
 
 		// if directory of processed patches already exists, then just go directly to k-means
-		File patchesDir = new File(outputFilePatches);
+		//File patchesDir = new File(outputFilePatches);
 
 		// if the directory does not exist,do pre-processing
-		if (!patchesDir.isDirectory()) {
+		//if (!patchesDir.isDirectory()) {
 			// patch pre-processing using contrast normalization and zca whitening
-			System.out.println("Data pre-processing...");
-			PreProcess preProcess = new PreProcess();
-			processedData = preProcess.preprocessData(processedData, outputFilePatches, eps1, eps2);
-			//processedData = processedData.persist(new StorageLevel().MEMORY_ONLY());
-		}
+		System.out.println("Data pre-processing...");
+		PreProcess preProcess = new PreProcess();
+		processedData = preProcess.preprocessData(processedData, outputFilePatches, eps1, eps2);
+		processedData = processedData.cache();
+		//}
 
 		// run K-means on the pre-processed patches, 1st layer learning
 		System.out.println("K-means learning...");
     	KMeansModel patchClusters = KMeans.train(processedData.rdd(), numClusters, numIterations);
+		
+    	// save cluster centers in a .txt file
 		Vector[] D1 = patchClusters.clusterCenters();  
 		
 		int k = patchClusters.k();		// number of clusters
@@ -124,7 +143,8 @@ public class DeepLearning {
 			centersString.append("\n");
 		}
 		
-		// save the strings to a .txt file, one vector per row
+		// save the strings to a hdfs file using Hadoop
+		// TODO!!!!!!!!!!!
 		System.out.println("Save cluster centers to file...");
 		try {
 			File file = new File(outputFileCenters);		
@@ -138,8 +158,9 @@ public class DeepLearning {
     	double WSSSE = patchClusters.computeCost(processedData.rdd());
     	System.out.println("Within Set Sum of Squared Errors = " + WSSSE);
 		
-		// feature extraction
-
+    	// apply feature extraction for the first layer
+    	// Config can be created here
+    	// 
   }
 
 }

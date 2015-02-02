@@ -71,8 +71,6 @@ public class PreProcess implements Serializable {
 
 		// number of data points in the dataset
 		long n = parsedData.count();
-		
-		//RDD<Vector> scalaData = parsedData.rdd();
 
 		// contrast normalization, use lambda expression
 		//JavaRDD<Vector> contrastNorm = parsedData.map(x -> new ContrastNormalization().call(x, eps1));
@@ -97,14 +95,6 @@ public class PreProcess implements Serializable {
 		/*Vector m = contrastNorm.reduce(new VectorSum());
 		for (int i = 0; i < m.size(); i++) {
 			m.toArray()[i] = m.apply(i) / n;
-		}
-		String ms = new MatrixOps().toString(m);
-		try {
-			File msDir = new File("/Users/nikolaos/Desktop/mean.txt");
-			FileUtils.writeStringToFile(msDir, ms);
-			System.out.println(m);
-		} catch (IOException ex) {
-			System.out.println(ex.toString());
 		}*/
 
 		// remove the mean from the dataset, use lambda expression
@@ -127,7 +117,7 @@ public class PreProcess implements Serializable {
 		patches = patches.multiply(ZCA);
 
 		// create a file with the processed patches and save it 
-		try {
+		/*try {
 			File patchesDir = new File(outputFile);
 
 			// if the directory exists, delete it
@@ -137,11 +127,11 @@ public class PreProcess implements Serializable {
 			}
 		} catch (IOException ex) {
 			System.out.println(ex.toString());
-		}
+		}*/
 			
 		// convert the distributed RowMatrix into a JavaRDD<Vector> 
 		JavaRDD<Vector> processedPatches = new JavaRDD(patches.rows(),centralContrastNorm.classTag());
-		processedPatches.saveAsTextFile(outputFile);
+		//processedPatches.saveAsTextFile(outputFile);
 
 		return processedPatches;
   }
@@ -159,33 +149,33 @@ class ContrastNormalization {//implements Function2<Vector, Double, Vector> {
 	// m: mean row vector of the dataset
 	// v: std row vector of the dataset
 	// e: regularizer
-	public Vector call(Vector r, Double e) {	
+	public Vector call(Vector v, Double e) {	
 
 		// vector size
-		int s = r.size();
+		int s = v.size();
 
 		// compute mean value of the vector
 		double m = 0;
 		for (int i = 0; i < s; i++) {
-			m += r.apply(i);
+			m += v.apply(i);
 		}
 		m /= s;
 
 		// compute standard deviation of the vector
 		double stdev = 0;
 		for (int i = 0; i < s; i++) {
-			stdev += (r.apply(i) - m) * (r.apply(i) - m);
+			stdev += (v.apply(i) - m) * (v.apply(i) - m);
 		}
 		stdev = stdev / (s - 1);
 
 		// subtract mean and divide by the standard deviation
 		//double e = 10;	// HERE change this!!!!
 		for (int i = 0; i < s; i++) {
-			r.toArray()[i] = r.apply(i) - m;
-			r.toArray()[i] = r.apply(i) / Math.sqrt((stdev + e));
+			v.toArray()[i] = v.apply(i) - m;
+			v.toArray()[i] = v.apply(i) / Math.sqrt((stdev + e));
 		}
 
-		return r;
+		return v;
 	}
 
 } 
