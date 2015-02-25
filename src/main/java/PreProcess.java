@@ -98,7 +98,7 @@ public class PreProcess implements Serializable {
 			
 		// convert the distributed RowMatrix into a JavaRDD<Vector> 
 		JavaRDD<Vector> processedPatches = new JavaRDD(patches.rows(),centralContrastNorm.classTag());
-		//processedPatches.saveAsTextFile(outputFile);
+		processedPatches.saveAsTextFile(outputFile);
 
 		return processedPatches;
   	}
