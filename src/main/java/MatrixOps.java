@@ -1,65 +1,57 @@
+import java.util.*;
+
 import org.apache.spark.mllib.linalg.Matrices;
 import org.apache.spark.mllib.linalg.Matrix;
-import org.apache.spark.mllib.linalg.Vector;
+import org.apache.spark.mllib.linalg.DenseMatrix;
+import org.apache.spark.mllib.linalg.SparseMatrix;
 import org.apache.spark.mllib.linalg.Vectors;
+import org.apache.spark.mllib.linalg.Vector;
+import org.apache.spark.mllib.linalg.DenseVector;
 import org.apache.spark.mllib.linalg.distributed.RowMatrix;
 
 
-/* helper class for base matrix operations
+/* helper class for base Matrix operations
 
 Available methods:
-	- transpose: returns the transpose of a matrix
-	- getRow: returns a specific row from a matrix 
-	- getCol: returns a specific column from a matrix
+	- transpose: returns the transpose of a Matrix
+	- reshapeVec2Mat: reshape a ector to a Matrix
+	- reshapeMat2Mat: reshape a Matrix to another Matrix
+	- convertVectors2Mat: convert array of Vectors to a Matrix
+	- vec: vectorize column-major a Matrix
+	- getRow: returns a specific row from a Matrix 
+	- getCol: returns a specific column from a Matrix
 	- toString: overrides the toString() method of the classes Vector and Matrix
 
-	- VecNormSq: squared norm of a vector
-	- MatNormSq: squared norm of a matrix 
-	- VecDistSq: squared euclidean distance between two vectors
+	- meanColVec: get mean column Vector of a Matrix
+	- meanRowVec: get mean row Vector of a Matrix
+
+	- VecNormSq: squared norm of a Vector
+	- MatNormSq: squared norm of a Matrix 
+	- VecDistSq: squared euclidean distance between two Vectors
 	- MatDistSq: squared euclidean distance between two matrices
 	- ComputeDistancesSq: Squared pair-wise distances between rows of Matrices
 
-	- DiagMatMatMult: Multiplication of a matrix by a diagonal matrix from the left
+	- DiagMatMatMult: Multiplication of a Matrix by a diagonal Matrix from the left
 	- MatMatMult: Matrix-Matrix multiplication
 	- MatVecMult: Matrix-Vector multiplication
-	- VecVecMultIn: Inner product between two vectors
-	- VecVecMultOut: Outer vector product
+	- VecVecMultIn: Inner product between two Vectors
+	- VecVecMultOut: Outer Vector product
 
+	- im2col: compute all overlapping 2-d patches of a Matrix
+	- conv2: 2-d convolution
+	- localVecContrastNormalization: compute contrast normalization on a local Vector
+	- localMatContrastNormalization: compute contrast normalization on a local Matrix, column-by-column
+	- localVecSubtractMean: subtract mean from a local Vector
+	- localMatSubtractMean: subtract mean from a local Matrix, row-by-row
+	- pool: max-pool of a Matrix
 */
 public class MatrixOps {
 
-	// override the method apply()
-	/*@Override public double apply(int i, int j) {
-		return this.apply(int i, int j);
-	}*/
-
-	// Override the method numCols()
-	/*@Override public int numCols() {
-		return this.numCols();
-	}
-
-	// Override the method numRows()
-	@Override public int numRows() {
-		return this.numRows();
-	}
-
-	// Override the method toArray()
-	@Override public double[] toArray() {
-		return this.toArray();
-	}
-
-	// Override the method toBreeze() 
-	@Override public breeze.linalg.Matrix<Object> toBreeze() {
-		return this.toBreeze();
-	}*/
-
-	// vectorize a matrix
-	// TODO::
-
-	// method that returns the transpose of a matrix
-	public Matrix transpose(Matrix M) {
+	// method that returns the transpose of a Matrix
+	// update this method using the new update method of the DenseMatrix class
+	public DenseMatrix transpose(DenseMatrix M) {
 		
-		// matrix size
+		// Matrix size
 		int n = M.numRows();
 		int m = M.numCols();
 
@@ -73,55 +65,84 @@ public class MatrixOps {
 			}
 		}
 
-		return Matrices.dense(m, n, Mt);
+		return new DenseMatrix(m, n, Mt);
 	}
 
+	// method that computes the transpose of a sparse matrix
+	// make it more efficient and take into account the more 
+	// general case of non-square
+	public SparseMatrix transposeSparse(SparseMatrix M) {
+
+		// size of the matrix
+		int n = M.numRows();
+		int m = M.numCols();
+
+		// create a deep copy of the sparse matrix
+		SparseMatrix Mt = M.copy();
+
+		// fill-in the tranpose sparse matrix
+		for (int i = 0; i < n; i++) {
+			for (int j = 0; j < n; j++) {
+				Mt.toArray()[j+n*i] = M.apply(i, j);
+				//System.out.println("Row " + i + ", Col " + j + ": " + Mt.apply(i, j) + " " + M.apply(i, j));
+			}
+		}
+
+		for (int i = 0; i < n; i++) {
+			for (int j = 0; j < n; j++) {
+				System.out.println("Row " + i + ", Col " + j + ": " + Mt.apply(i, j) + " " + M.apply(i, j));	
+			}
+		}
+
+		return Mt;
+	}
 	
-	// method that reshapes the input vector to a matrix with specified dimensions
-	public Matrix reshapeVec2Mat(Vector v, int[] dims) {
+	
+	// method that reshapes the input Vector to a Matrix with specified dimensions
+	public DenseMatrix reshapeVec2Mat(DenseVector v, int[] dims) {
 
-		return Matrices.dense(dims[0], dims[1], v.toArray()); 
+		return new DenseMatrix(dims[0], dims[1], v.toArray()); 
 	}
 
 
-	// method that reshapes the input matrix to a matrix
-	public Matrix reshapeMat2Mat(Matrix M, int[] dims) {
+	// method that reshapes the input Matrix to a Matrix
+	public DenseMatrix reshapeMat2Mat(DenseMatrix M, int[] dims) {
 
-		return Matrices.dense(dims[0], dims[1], M.toArray());
+		return new DenseMatrix(dims[0], dims[1], M.toArray());
 	}
 
 
-	// method that converts an array of vectors to a matrix
-	public Matrix convertVectors2Mat(Vector[] V, int k) {
+	// method that converts an array of Vectors to a Matrix
+	public DenseMatrix convertVectors2Mat(Vector[] V, int k) {
 
-		// size of the vectors inside the array
+		// size of the Vectors inside the array
 		int s = V[0].size();
 
-		// allocate memory for output matrix
+		// allocate memory for output Matrix
 		double[] out = new double[s*k];
 		
-		// assign vectors to each row of the matrix
+		// assign Vectors to each row of the Matrix
 		for (int i = 0; i < k; i++) {
 			for (int j = 0; j < s; j++) {
 				out[i+k*j] = V[i].apply(j);
 			}
 		}
 
-		return Matrices.dense(k, s, out);
+		return new DenseMatrix(k, s, out);
 	}
 
 
-	// method that vectorizes column-major the input matrix
-	public Vector vec(Matrix M) {
+	// method that vectorizes column-major the input Matrix
+	public DenseVector vec(DenseMatrix M) {
 
-		// size of the matrix
+		// size of the Matrix
 		int n = M.numRows();
 		int m = M.numCols();
 
-		// allocate memory for the vector
+		// allocate memory for the Vector
 		double[] out = new double[m*n];
 
-		// global counter of the vector
+		// global counter of the Vector
 		int c = 0;
 
 		// main assignment loop 
@@ -132,14 +153,35 @@ public class MatrixOps {
 			}
 		}
 
-		return Vectors.dense(m*n, out);
+		return new DenseVector(out);
 	}
 
 
-	// get a specific row from a matrix, index starts from zero
-	public Vector getRow(Matrix M, int r) throws IndexOutOfBoundsException {
+	// get a specific row from a Matrix, index starts from zero
+	public DenseVector getRow(DenseMatrix M, int r) throws IndexOutOfBoundsException {
 		
-		// matrix size
+		// Matrix size
+		int n = M.numRows();
+		int m = M.numCols();
+
+		// check for the index bounds
+		if (r >= n) {
+			throw new IndexOutOfBoundsException("Row index argument is out of bounds!");
+		}
+
+		// return the specified row
+		double[] row = new double[m];
+		for (int j = 0; j < m; j++) {
+			row[j] = M.apply(r, j);
+		}
+
+		return new DenseVector(row);
+	}
+
+	// get a specific row from a Matrix, index starts from zero
+	public Vector getRowV(DenseMatrix M, int r) throws IndexOutOfBoundsException {
+		
+		// Matrix size
 		int n = M.numRows();
 		int m = M.numCols();
 
@@ -157,12 +199,12 @@ public class MatrixOps {
 		return Vectors.dense(row);
 	}
 
-	// get several rows from a matrix
+	// get several rows from a Matrix
 
-	// get a specific column from a matrix
-	public Vector getCol(Matrix M, int c) throws IndexOutOfBoundsException {
+	// get a specific column from a Matrix
+	public DenseVector getCol(DenseMatrix M, int c) throws IndexOutOfBoundsException {
 		
-		// matrix size
+		// Matrix size
 		int n = M.numRows();
 		int m = M.numCols();
 
@@ -177,23 +219,23 @@ public class MatrixOps {
 			col[i] = M.apply(i, c);
 		}
 		
-		return Vectors.dense(col);
+		return new DenseVector(col);
 	}
 
-	// get several columns from a matrix
+	// get several columns from a Matrix
 
 	
-	// get mean column vector of a matrix
-	public Vector meanColVec(Matrix M) {
+	// get mean column Vector of a Matrix
+	public DenseVector meanColVec(DenseMatrix M) {
 
-		// matrix size
+		// Matrix size
 		int n = M.numRows();
 		int m = M.numCols();
 
-		// allocate memory for the mean vector and temporary sum vector
+		// allocate memory for the mean Vector and temporary sum Vector
 		double[] out = new double[n];
 
-		// compute mean vector
+		// compute mean Vector
 		double sum = 0.0;
 		for (int i = 0; i < n; i++) {
 			for (int j = 0; j < m; j++) {
@@ -203,21 +245,21 @@ public class MatrixOps {
 			sum = 0.0;
 		}
 
-		return Vectors.dense(out);
+		return new DenseVector(out);
 	}
 
 
-	// get mean row vector of a matrix
-	public Vector meanRowVec(Matrix M) {
+	// get mean row Vector of a Matrix
+	public DenseVector meanRowVec(DenseMatrix M) {
 
-		// matrix size
+		// Matrix size
 		int n = M.numRows();
 		int m = M.numCols();
 
-		// allocate memory for the mean vector and temporary sum vector
+		// allocate memory for the mean Vector and temporary sum Vector
 		double[] out = new double[m];
 
-		// compute mean vector
+		// compute mean Vector
 		double sum = 0.0;
 		for (int j = 0; j < m; j++) {
 			for (int i = 0; i < n; i++) {
@@ -227,14 +269,14 @@ public class MatrixOps {
 			sum = 0.0;
 		}
 
-		return Vectors.dense(out);
+		return new DenseVector(out);
 	}
 
 
-	// override toString() function for printing an Object of the Vector class
-	public String toString(Vector v) {
+	// override toString() function for printing an Object of the DenseVector class
+	public String toString(DenseVector v) {
 		
-		// vector length
+		// Vector length
 		int s = v.size();
 
 		// StringBuilder allocates memory from before, better performance than 
@@ -249,10 +291,10 @@ public class MatrixOps {
 	}
 
 
-	// override toString() function for printing an Object of the Matrix class
-	public String toString(Matrix M) {
+	// override toString() function for printing an Object of the DenseMatrix class
+	public String toString(DenseMatrix M) {
 		
-		// matrix size
+		// Matrix size
 		int n = M.numRows();
 		int m = M.numCols();
 
@@ -271,10 +313,10 @@ public class MatrixOps {
 	}
 
 
-	// squared l2 norm of a vector
-	public double VecNormSq(Vector v) {
+	// squared l2 norm of a Vector
+	public double vecNormSq(DenseVector v) {
 	
-		// vector length
+		// Vector length
 		int s = v.size();
 
 		// sum of squares
@@ -287,10 +329,10 @@ public class MatrixOps {
 	}
 
 
-	// squared l2 norm of a matrix (sum of squared values) 
-	public double MatNormSq(Matrix M) {
+	// squared l2 norm of a Matrix (sum of squared values) 
+	public double matNormSq(DenseMatrix M) {
 	
-		// size of the matrix
+		// size of the Matrix
 		int n = M.numRows();
 		int m = M.numCols();
 		
@@ -306,17 +348,17 @@ public class MatrixOps {
 	}
 
 
-	// compute squared l2 distance between two vectors
-	public double VecDistSq(Vector v1, Vector v2) throws IllegalArgumentException {
+	// compute squared l2 distance between two Vectors
+	public double vecDistSq(DenseVector v1, DenseVector v2) throws IllegalArgumentException {
 	
-		// length of the first vector
+		// length of the first Vector
 		int s1 = v1.size();
 
-		// length of the second vector, it should have the same size!
+		// length of the second Vector, it should have the same size!
 		int s2 = v2.size();
 
 		if (s1 != s2) {
-			throw new IllegalArgumentException("The two vectors do not have the same length!");
+			throw new IllegalArgumentException("The two Vectors do not have the same length!");
 		}
 
 		// sum of element-wise squared differences
@@ -330,13 +372,13 @@ public class MatrixOps {
 
 
 	// compute squared l2 distance between two matrices
-	public double MatDistSq(Matrix A, Matrix B) throws IllegalArgumentException {
+	public double matDistSq(DenseMatrix A, DenseMatrix B) throws IllegalArgumentException {
 	
-		// dimensions of the first matrix
+		// dimensions of the first Matrix
 		int n1 = A.numRows();
 		int m1 = A.numCols();
 
-		// dimension of the second matrix, should be the same as the first!
+		// dimension of the second Matrix, should be the same as the first!
 		int n2 = B.numRows();
 		int m2 = B.numCols();
 
@@ -355,16 +397,40 @@ public class MatrixOps {
 		return distSq;
 	}
 
-
-	// compute sqaured distances between row vectors in two different matrices
-	// the return argument will be a matrix with pair-wise distances 
-	public Matrix ComputeDistancesSq(Matrix A, Matrix B) throws IllegalArgumentException {
+	// compute sqaured distances between a Vector and a Matrix
+	// the return argument will be a Vector with pair-wise distances
+	public DenseVector computeDistancesVecMatSq(DenseVector v, DenseMatrix M) throws IllegalArgumentException {
 		
-		// dimensions of the first matrix
+		// size of the vector
+		int s = v.size();
+		
+		// dimensions of the Matrix, the number of columns should be the same
+		int n = M.numRows();
+		int m = M.numCols();
+
+		if (s != m) {
+			throw new IllegalArgumentException("The vector and the matrix should have the same number of columns!");
+		}
+
+		// compute pair-wise distances
+		double[] distSq = new double[n];
+		for (int i = 0; i < n; i++) {
+			distSq[i] = vecDistSq(v, getRow(M, i));
+		}
+		
+		return new DenseVector(distSq);
+	}
+
+
+	// compute sqaured distances between row Vectors in two different matrices
+	// the return argument will be a Matrix with pair-wise distances 
+	public DenseMatrix computeDistancesMatMatSq(DenseMatrix A, DenseMatrix B) throws IllegalArgumentException {
+		
+		// dimensions of the first Matrix
 		int n1 = A.numRows();
 		int m1 = A.numCols();
 
-		// dimensions of the second matrix, the number of columns should be the same
+		// dimensions of the second Matrix, the number of columns should be the same
 		int n2 = B.numRows();
 		int m2 = B.numCols();
 
@@ -376,30 +442,98 @@ public class MatrixOps {
 		double[] distSq = new double[n1*n2];
 		for (int i = 0; i < n1; i++) {
 			for (int j = 0; j < n2; j++) {
-				distSq[i+n1*j] = VecDistSq(getRow(A, i), getRow(B, j));
+				distSq[i+n1*j] = vecDistSq(getRow(A, i), getRow(B, j));
 			}
 		}
 		
-		return Matrices.dense(n1, n2, distSq);
+		return new DenseMatrix(n1, n2, distSq);
 	}
 
 
-	// multiply a diagonal matrix (vector in reality) with a matrix
-	public Matrix DiagMatMatMult(Vector v, Matrix M) throws IllegalArgumentException {
+	// compute a sparse k-nn weight matrix from a matrix of data points
+	public SparseMatrix computeWeightMatrix(DenseMatrix M, int k, double sigma) {
+
+		// dimensions of the matrix
+	 	int n = M.numRows();
+	 	int m = M.numCols();
+
+	 	// allocate memory for array of values and indices 
+	 	int[] colPtr = new int[n+1];
+	 	int[] rowIdx = new int[n*k];
+	 	double[] values = new double[n*k];
+
+	 	final Integer[] idx = new Integer[n];
+	 	for (int i = 0; i < n; i++) {
+
+	 		// get current row of the matrix
+	 		DenseVector c = getRow(M, i);
+
+	 		// compute distances of all points from this point
+	 		final DenseVector dist = computeDistancesVecMatSq(c, M);
+
+	 		// compute indices of the sorted distances
+	 		for (int j = 0; j < n; j++) {
+	 			idx[j] = j;
+	 		}
+	 		Arrays.sort(idx, new Comparator<Integer>() {
+    			@Override public int compare(final Integer o1, final Integer o2) {
+        			return Double.compare(dist.toArray()[o1], dist.toArray()[o2]);
+    			}
+			});
+
+	 		// find only the first k indices and sort them again, so that 
+	 		// the assigned values correspond to them
+	 		int[] sortIdx = new int[k];
+	 		for (int j = 0; j < k; j++) {
+	 			sortIdx[j] = idx[j];
+	 		}
+	 		Arrays.sort(sortIdx);
+
+	 		// assign values and indices
+	 		int kk = 0;
+	 		for (int j = i*k; j < (i+1)*k; j++) {
+	 			rowIdx[j] = sortIdx[kk];
+	 			values[j] = dist.toArray()[sortIdx[kk]];
+	 			kk++;	
+	 		}
+	 		colPtr[i] = i * k;
+	 	}
+	 	colPtr[n] = n * k;
+
+	 	// create sparse matrix
+	 	SparseMatrix W = new SparseMatrix(n, n, colPtr, rowIdx, values);
+	 	
+	 	// make it symmetric
+
+	 	return W;
+
+ 		// HERE: Construct either mutual or normal graph
+
+	 	// Unweighted graph?
+
+	 	// create a gaussian function from the euclidean distances
+	}
+
+
+	// spectral clustering using the graph Laplacian
+
+
+	// multiply a diagonal Matrix (Vector in reality) with a Matrix
+	public DenseMatrix diagMatMatMult(DenseVector v, DenseMatrix M) throws IllegalArgumentException {
 	
-		// size of the matrix, vector's size is the same as the matrix rows
+		// size of the Matrix, Vector's size is the same as the Matrix rows
 		int n = M.numRows();
 		int m = M.numCols();
 
-		// vector length
+		// Vector length
 		int s = v.size();
 		
 		// throw an exception if sizes are not compatible
 		if (n != s) {
-			throw new IllegalArgumentException("Incompatible vector and matrix sizes!");
+			throw new IllegalArgumentException("Incompatible Vector and Matrix sizes!");
 		}
 
-		// allocate memory for the output matrix
+		// allocate memory for the output Matrix
 		double[] out = new double[n*m];
 	
 		// perform the multiplication
@@ -409,27 +543,27 @@ public class MatrixOps {
 			}
 		}
 
-		return Matrices.dense(n, m, out);
+		return new DenseMatrix(n, m, out);
 	}
 
 
-	// multiply a matrix with a matrix from the left
-	public Matrix MatMatMult(Matrix A, Matrix B) throws IllegalArgumentException  {
+	// multiply a Matrix with a Matrix from the left
+	public DenseMatrix matMatMult(DenseMatrix A, DenseMatrix B) throws IllegalArgumentException  {
 		
-		// size of the first matrix
+		// size of the first Matrix
 		int n = A.numRows();
 		int m = A.numCols();
 
-		// columns of the second matrix
+		// columns of the second Matrix
 		int p = B.numRows();
 		int r = B.numCols();
 
-		// throw an exception if matrix sizes are not compatible
+		// throw an exception if Matrix sizes are not compatible
 		if (m != p) {
 			throw new IllegalArgumentException("Matrix sizes are incompatible!"); 
 		}
 	
-		// allocate memory for the output matrix
+		// allocate memory for the output Matrix
 		double[] out = new double[n*r];
 		
 		// perform the multiplication
@@ -446,19 +580,28 @@ public class MatrixOps {
 			}
 		}
 		
-		return Matrices.dense(n, r, out);
+		return new DenseMatrix(n, r, out);
 	}
 
+	// Matrix Vector multiplication
+	//public Matrix MatVecMult(Matrix A, DenseVector x) throws IllegalStateException {}
 	
-	// compute all overlapping patches of a 2-D matrix
-	// each patch is a column of the resulting matrix
-	public Matrix im2col(Matrix M, int[] blockSize) {
+	// inner product between two Vectors
+	//public DenseVector VecVecMultIn(DenseVector v1, DenseVector v2) throws IllegalStateException {}
 
-		// size of the matrix 
+	// outer product between two Vectors
+	//public Matrix VecVecMultOut(DenseVector v1, DenseVector v2) throws IllegalStateException {}
+
+	
+	// compute all overlapping patches of a 2-D Matrix
+	// each patch is a column of the resulting Matrix
+	public DenseMatrix im2col(DenseMatrix M, int[] blockSize) {
+
+		// size of the Matrix 
 		int n = M.numRows();
 		int m = M.numCols();
 
-		// allocate memory for the final output matrix 
+		// allocate memory for the final output Matrix 
 		// which contains in each column an overlapping patch
 		int blockSizeTotal = blockSize[0] * blockSize[1];
 		int[] sizeSmall = {n-blockSize[0]+1,  m-blockSize[1]+1};
@@ -484,7 +627,7 @@ public class MatrixOps {
 			}
 		}
 
-		// vectorize the matrix and convert it to Apache format
+		// vectorize the Matrix and convert it to Apache format
 		int totalNum = 0;
 		double[] outVec = new double[blockSizeTotal*numPatches];
 		for (int j = 0; j < numPatches; j++) {
@@ -494,14 +637,14 @@ public class MatrixOps {
 			}
 		}
 
-		return Matrices.dense(blockSizeTotal, numPatches, outVec);
+		return new DenseMatrix(blockSizeTotal, numPatches, outVec);
 	}
 
 
 	// 2-D convolution, without any zero-padding, resulting image of smaller size than original
-	public Matrix conv2(Matrix M, Matrix F) {
+	public DenseMatrix conv2(DenseMatrix M, DenseMatrix F) {
 
-		// size of the matrix to be convolved
+		// size of the Matrix to be convolved
 		int n = M.numRows();
 		int m = M.numCols();
 
@@ -530,24 +673,24 @@ public class MatrixOps {
 			}
 		}
 
-		return Matrices.dense(oR, oC, out);
+		return new DenseMatrix(oR, oC, out);
 	}
 
 
-	// compute contrast normalization on a local vector
-	public Vector localVecContrastNormalization(Vector v, double e) {	
+	// compute contrast normalization on a local Vector
+	public DenseVector localVecContrastNormalization(DenseVector v, double e) {	
 
-		// vector size
+		// Vector size
 		int s = v.size();
 
-		// compute mean value of the vector
+		// compute mean value of the Vector
 		double m = 0;
 		for (int i = 0; i < s; i++) {
 			m += v.apply(i);
 		}
 		m /= s;
 
-		// compute standard deviation of the vector
+		// compute standard deviation of the Vector
 		double stdev = 0;
 		for (int i = 0; i < s; i++) {
 			stdev += (v.apply(i) - m) * (v.apply(i) - m);
@@ -565,16 +708,16 @@ public class MatrixOps {
 	}
 
 
-	// compute contrast normalization on a local matrix, column by column
-	public Matrix localMatContrastNormalization(Matrix M, double e) {
+	// compute contrast normalization on a local Matrix, column by column
+	public DenseMatrix localMatContrastNormalization(DenseMatrix M, double e) {
 
-		// matrix size
+		// Matrix size
 		int n = M.numRows();
 		int m = M.numCols();
 
-		// allocate memory for temporary vector and final matrix
-		Vector cur = Vectors.dense(new double[m]);		
-		Matrix C = Matrices.dense(n, m, new double[n*m]);
+		// allocate memory for temporary Vector and final Matrix
+		DenseVector cur = new DenseVector(new double[m]);		
+		DenseMatrix C = new DenseMatrix(n, m, new double[n*m]);
 
 		// main loop for contrast normalization
 		for (int i = 0; i < n; i++) {
@@ -591,37 +734,37 @@ public class MatrixOps {
 	}
 
 
-	// subtract mean from a local vector
-	public Vector localVecSubtractMean(Vector v, Vector m) {
+	// subtract mean from a local Vector
+	public DenseVector localVecSubtractMean(DenseVector v, DenseVector m) {
 
-		// maybe here check the size of the vector and throw an exception!!
+		// maybe here check the size of the Vector and throw an exception!!
 		
-		// vector size
+		// Vector size
 		int s = v.size();
 
-		// loop over elements to subtract the two vectors
+		// loop over elements to subtract the two Vectors
 		double[] sub = new double[s];
 		for (int i = 0; i < s; i++) {
 			sub[i] = v.apply(i) - m.apply(i);
 		}
 		
-		return Vectors.dense(sub);
+		return new DenseVector(sub);
 
 	}
 
 
-	// subtract mean from a local matrix row by row
-	public Matrix localMatSubtractMean(Matrix M, Vector v) {
+	// subtract mean from a local Matrix row by row
+	public DenseMatrix localMatSubtractMean(DenseMatrix M, DenseVector v) {
 
-		// maybe here check the size of the vector and throw an exception!!
+		// maybe here check the size of the Vector and throw an exception!!
 		
-		// matrix size
+		// Matrix size
 		int n = M.numRows();
 		int m = M.numCols();
 
-		// allocate memory for temporary vector and final matrix
-		Vector cur = Vectors.dense(n, new double[m]);	
-		Matrix C = Matrices.dense(n, m, new double[n*m]);
+		// allocate memory for temporary Vector and final Matrix
+		DenseVector cur = new DenseVector(new double[m]);	
+		DenseMatrix C = new DenseMatrix(n, m, new double[n*m]);
 
 		// loop over elements to subtract the mean row by row
 		for (int i = 0; i < n; i++) {
@@ -639,18 +782,17 @@ public class MatrixOps {
 
 
 	// max-pool an image
-	public Matrix pool(Matrix M, int[] poolSize) {
+	public DenseMatrix pool(DenseMatrix M, int[] poolSize) {
 
-		// matrix size
+		// Matrix size
 		int n = M.numRows();
 		int m = M.numCols();
 
-		// pooled matrix size
+		// pooled Matrix size
 		int[] poolDim = new int[2];
 		poolDim[0] = (int) Math.floor(n/poolSize[0]);
 		poolDim[1] = (int) Math.floor(m/poolSize[1]);
 		double[] out = new double[poolDim[0]*poolDim[1]];	
-
 		
 		// upper left patch indices
 		int k = 0;
@@ -664,7 +806,6 @@ public class MatrixOps {
 		for (int i = 0; i < poolDim[0]; i++) {
 			for (int j = 0; j < poolDim[1]; j++) {
 
-				System.out.println("Here OK " + i + " " + j);
 				// extract the current patch lower right indices
 				kk = Math.min(k+poolSize[0],n);
 				ll = Math.min(l+poolSize[1],m);
@@ -679,8 +820,8 @@ public class MatrixOps {
 					}
 				}
 
-				// assign the max value in the resulting matrix
-				out[i+n*j] = maxPatch;
+				// assign the max value in the resulting Matrix
+				out[i+poolDim[0]*j] = maxPatch;
 				
 				// go one step to the right
 				l += poolSize[1];
@@ -691,17 +832,40 @@ public class MatrixOps {
 			l = 0;
 		}
 
-		return Matrices.dense(poolDim[0], poolDim[1], out);
+		return new DenseMatrix(poolDim[0], poolDim[1], out);
 	}
 
+	// group pooling over learned filters
+	public DenseVector groupPool(DenseMatrix feats, int[] pooledDims, int k, Integer[] groups, int numGroups) {
 
-	// matrix vector multiplication
-	//public Matrix MatVecMult(Matrix A, Vector x) throws IllegalStateException {}
-	
-	// inner product between two vectors
-	//public Vector VecVecMultIn(Vector v1, Vector v2) throws IllegalStateException {}
+		// dimensions of feature Matrix
+		int n = feats.numRows();
+		int m = feats.numCols();
 
-	// outer product between two vectors
-	//public Matrix VecVecMultOut(Vector v1, Vector v2) throws IllegalStateException {}
+		// allocate memory for the pooled features 
+		double[] pooledFeats = new double[n*numGroups];
+		for (int p = 0; p < n*numGroups; p++) {
+			pooledFeats[p] = -Double.MAX_VALUE;
+		}
+
+		// max-pool the responses over the learned filters
+		for (int i = 0; i < n; i++) {
+			for (int j = 0; j < m; j++) {
+
+				// find current group of filters
+				int g = groups[j];
+
+				// update the pooled features
+				double featsTemp = feats.apply(i, j); 
+				if (featsTemp > pooledFeats[i+n*g]) {
+					pooledFeats[i+n*g] = featsTemp;	
+				}
+			}
+		}
+		DenseVector pooledFeatures = new DenseVector(pooledFeats);
+
+		return pooledFeatures;
+	}
+
 }
 
