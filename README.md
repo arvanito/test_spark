@@ -10,6 +10,7 @@ One single layer of the above architecture has the following form:
 The output of one layer becomes the input to the next one, etc.
 
 Basic files in the program:
+
 	- DeepLearning.java: Entry point of the algorithm. It calls the appropriate methods for the following processing: 
 		- It reads patches from a text file and creates a distributed dataset (RDD). 
 		- Runs some pre-processing steps on the patches in parallel: contrast normalization and ZCA whitening. 
